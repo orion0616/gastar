@@ -1,7 +1,10 @@
 #ifndef BINARYHEAP_H_
 #define BINARYHEAP_H_
 
-#include "Entry.h"
+#include "State.h"
+#include "iostream"
+
+using namespace std;
 
 class BinaryHeap {
 public:

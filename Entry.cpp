@@ -6,14 +6,17 @@
 #include <assert.h>
 #include <iostream>
 #include <cmath>
-#include "BinaryHeap.h"
+#include <random>
+#include "Entry.h"
 
-#define N 512
+#define N 4
 
 std::vector<bool> map;
 std::vector<int> visited;
 std::vector<xyLoc> succ;
 int width, height;
+
+using namespace std;
 
 const char *GetName()
 {
@@ -34,68 +37,85 @@ void *PrepareForSearch(std::vector<bool> &bits, int w, int h, const char *filena
     return (void *)13182;
 }
 
-// TODO
-void remove(BinaryHeap* pqs, std::vector<std::vector<state*> >S, /*lengthForS,*/ xyLoc g, state m);
-// void remove(thrust::device_vector<state *> arrays[], int *lengths, thrust::device_vector<state *> S[], int *lengthForS, xyLoc goal, state** candidate){
-//     int num = threadIdx.x;
-//     state** array = RAW(arrays[num]);
-//     /* state** array = arrays[num]; */
-//     int len = lengths[num];
-//
-//     BinaryHeap pq = BinaryHeap(array, len);
-//     if (pq.empty()) {
-//         return;
-//     }
-//     state* min = pq.remove();
-//     if (min->node.x == goal.x && min->node.y == goal.y) {
-//         if (candidate[0]->isNil() || min->f_value < candidate[0]->f_value) {
-//             candidate[0] = min;
-//         }
-//     }
-//
-//     lengthForS[num] = GetSuccessors_for_gastar(min, RAW(S[num]));
-//     /* lengthForS[num] = GetSuccessors_for_gastar(min, S[num]); */
-//     return;
-// }
+void remove(BinaryHeap* pqs, state*** S, xyLoc goal, state &m, int num){
+    if (pqs[num].empty()){
+        return;
+    }
+
+    stateWithF min;
+    do {
+        min = pqs[num].remove();
+    } while(!min.ptr->isOpen && !pqs[num].empty());
+    //XXX
+    if (!min.ptr->isOpen)
+        return;
+
+
+    if (min.ptr->node.x == goal.x && min.ptr->node.y == goal.y) {
+        if (m.isNil() || min.ptr->f_value < m.f_value) {
+            m = *(min.ptr);
+        }
+    }
+
+    state* neighbors = (state*)malloc(sizeof(state)*8);
+    // int numOfNeighbors = GetSuccessors_for_gastar(min.ptr, S[num], goal);
+    int numOfNeighbors = GetSuccessors_for_gastar(min.ptr, neighbors, goal);
+    for(int i= 0;i<numOfNeighbors; i++) {
+        S[num][i] = &neighbors[i];
+    }
+    //XXX
+    // free(neighbors);
+    return;
+}
 
 bool isAllQueueEmpty(BinaryHeap* pqs) {
     for(int i=0; i< N; i++){
-        if(!pqs[i].empty())
+        if(!pqs[i].empty()){
             return false;
+        }
     }
     return true;
 }
 
-// TODO
-// void duplicate_detection(state** table,thrust::device_vector<state *, thrust::device_malloc_allocator<state *>> pqs[], int *lengths, thrust::device_vector<state *,
-//         thrust::device_malloc_allocator<state *>> S[], int *lengthForS){
-//     int x = threadIdx.x;
-//     for(int i=0; i< lengthForS[x]; i++) {
-//         state* s = S[x][i];
-//         state* old = table[s->hash()];
-//         if (!old->isNil() && old->g_value < s->g_value) {
-//             return;
-//         } else {
-//             /* s->f_value = s->f_value */
-//             curandState_t state;
-//             curand_init(0,0,0, &state);
-//             int result = curand(&state) %N;
-//             BinaryHeap pq = BinaryHeap(RAW(pqs[result]), lengths[result]);
-//             pq.add(s);
-//             lengths[result] += 1;
-//         }
-//     }
-// }
+void duplicate_detection(state** table, BinaryHeap* pqs, state*** S, int num){
+    for(int i=0;i<8;i++) {
+        state* s = S[num][i];
+        if(s->isNil()){
+            return;
+        }
+        state* old = table[s->hash()];
+        if (!old->isNil() && old->g_value <= s->g_value) {
+            continue;
+        } else {
+            std::random_device rd;
+	        std::mt19937 mt(rd());
+            int result = mt()%N;
+
+            stateWithF froms(s);
+            pqs[result].add(froms);
+            // cout << "pq number -> " << result << "! Add ("<< froms.ptr->node.x << " " << froms.ptr->node.y << ")"<<  endl;
+
+            table[s->hash()] = s;
+        }
+    }
+    return;
+}
 
 bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     assert((long)data == 13182);
     BinaryHeap pqs[N];
+    for(int i=0;i<N;i++){
+        pqs[i].n = 0;
+    }
     state initial(s,g);
-    state m;
+    state nil(xyLoc(-1,-1), xyLoc(-1,-1));
+    state m = nil;
     pqs[0].add(stateWithF(&initial));
 
-    // TODO: prepare enough size(not N)
-    state* table[N];
+    state** table = (state**)malloc(sizeof(state*)*width*height);
+    for(int i=0; i<width*height; i++){
+        table[i] = &nil;
+    }
 
     if(path.size() > 0) {
         path.push_back(g);
@@ -103,50 +123,65 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     }
 
     while(!isAllQueueEmpty(pqs)) {
-        std::vector<std::vector<state*> > S(N);
-        for(int i=0;i<N;i++) {
-            std::vector<state*> tmp;
-            S[i] = tmp;
+        state***  S= (state***)malloc(sizeof(state**)*N);
+        for (int i=0;i<N;i++) {
+	        S[i] = (state**)malloc(sizeof(state*)*8);
+            for(int j=0;j<8;j++){
+                S[i][j] = &nil;
+            }
         }
-        // 8個の要素を持つ配列、の配列をSとする
-        // lengthの代わりに、illegalな値をセットしてチェックをするようにする
+        for (int i=0;i<N;i++){
+            remove(pqs, S, g, m, i);
+        }
 
-        //TODO: for loop
-        remove(pqs, S, g, m);
-
-        bool flag = true;
-        if (m.isNil()) {
+        bool pathFound = false;
+        if (!m.isNil()) {
             for(int i=0; i< N; i++) {
                 if (pqs[i].empty()){
                     continue;
                 } else {
                     if(m.f_value > pqs[i].top().ptr->f_value)
-                        flag = false;
-                    break;
+                        break;
                 }
             }
+            pathFound = true;
         }
-        if(flag){
+        if(pathFound){
+            for(int i=0;i<N;i++){
+                free(S[i]);
+            }
+            free(S);
             break;
         }
-        duplicate_detection(table, pqs, S);
-        // duplicate_detection<<<1,N>>>(RAW(table), pqs, RAW(lengths), S, RAW(lengthForS));
+        for (int i=0; i< N;i++){
+            duplicate_detection(table, pqs, S, i);
+        }
+
+        for(int i=0;i<N;i++){
+            free(S[i]);
+        }
+        free(S);
     }
 
-    // TODO: must change
-    /* while(last.x != s.x || last.y != s.y) { */
-    /*     xyLoc pos;                          */
-    /*     pos.x = last.x;                     */
-    /*     pos.y = last.y;                     */
-    /*     path.push_back(pos);                */
-    /*     last = *last.parent;                */
-    /* }                                       */
-    /* path.push_back(s); */
-
-    if(path.size() > 0) {
-        path.pop_back();
-        return false;
+    state last = m;
+    while(last.node.x != s.x || last.node.y != s.y) {
+        // cout << last.node.x << " " << last.node.y << endl;
+        xyLoc pos;
+        pos.x = last.node.x;
+        pos.y = last.node.y;
+        path.push_back(pos);
+        last = *last.parent;
     }
+    path.push_back(s);
+    reverse(path.begin(), path.end());
+    free(table);
+
+    // if(path.size() > 0) {
+    //     path.pop_back();
+    //     //XXX
+    //     // return false;
+    //     return true;
+    // }
     return true;
 }
 
@@ -155,32 +190,106 @@ int GetIndex(xyLoc s)
     return s.y*width+s.x;
 }
 
-int GetSuccessors_for_gastar(state* s, state** neighbors) {
-    return 0;
+state create_next_state(state &orig, xyLoc goal, Direction d) {
+    state next = orig;
+    next.parent = &orig;
+    if(d%2 == 0) {
+        next.g_value = orig.g_value + 1;
+    } else {
+        next.g_value = orig.g_value + 1.4142;
+    }
+    switch(d) {
+    case UP:
+        next.node.y--;
+        break;
+    case UPPERLEFT:
+        next.node.x--;
+        next.node.y--;
+        break;
+    case LEFT:
+        next.node.x--;
+        break;
+    case LOWERLEFT:
+        next.node.x--;
+        next.node.y++;
+        break;
+    case DOWN:
+        next.node.y++;
+        break;
+    case LOWERRIGHT:
+        next.node.x++;
+        next.node.y++;
+        break;
+    case RIGHT:
+        next.node.x++;
+        break;
+    case UPPERRIGHT:
+        next.node.x++;
+        next.node.y--;
+        break;
+    }
+    next.isOpen = true;
+    next.f_value = next.g_value + next.octile(goal);
+    return next;
 }
 
-// make plan
-// trace path by visited
-void ExtractPath(xyLoc end, std::vector<xyLoc> &finalPath)
-{
-    int currCost = visited[GetIndex(end)];
+// GetSuccessors_for_gastar is extarcting function
+// @param s: the state will be extracted.
+// @param neighbors: an array of pointers which points state*. It stores neighbors
+// @param g: goal
+// @return : the number of neighbors.
+int GetSuccessors_for_gastar(state* s, state* neighbors, xyLoc g) {
+    bool up = false, down = false, left = false, right = false;
+    int i = 0;
 
-    finalPath.resize(0);
-    finalPath.push_back(end);
-
-    while (currCost != 1)
-    {
-        GetSuccessors(finalPath.back(), succ);
-        for (unsigned int x = 0; x < succ.size(); x++)
-        {
-            if (visited[GetIndex(succ[x])] == currCost-1)
-            {
-                finalPath.push_back(succ[x]);
-                currCost--;
-                break;
-            }
-        }
+    state next = create_next_state(*s,g,RIGHT);
+    if (next.node.x < width && map[GetIndex(next.node)]) {
+        neighbors[i] = next;
+        i++;
+        right = true;
     }
-    std::reverse(finalPath.begin(), finalPath.end());
+    next = create_next_state(*s,g,LEFT);
+    if (next.node.x >= 0 && map[GetIndex(next.node)]) {
+        neighbors[i] = next;
+        i++;
+        left = true;
+    }
+    next = create_next_state(*s,g,UP);
+    if (next.node.y >= 0 && map[GetIndex(next.node)]) {
+        neighbors[i] = next;
+        i++;
+        up = true;
+    }
+    next = create_next_state(*s,g,DOWN);
+    if (next.node.y < height && map[GetIndex(next.node)]) {
+        neighbors[i] = next;
+        i++;
+        down = true;
+    }
+    next = create_next_state(*s,g,LOWERRIGHT);
+    if (next.node.y < height && next.node.x < width && map[GetIndex(next.node)] && right && down){
+        neighbors[i] = next;
+        i++;
+    }
+    next = create_next_state(*s,g,UPPERRIGHT);
+    if (next.node.y >= 0 &&  next.node.x < width && map[GetIndex(next.node)] && right && up){
+        neighbors[i] = next;
+        i++;
+    }
+    next = create_next_state(*s,g,UPPERLEFT);
+    if (next.node.y >= 0 && next.node.x >= 0 && map[GetIndex(next.node)] && left && up){
+        neighbors[i] = next;
+        i++;
+    }
+    next = create_next_state(*s,g,LOWERLEFT);
+    if (next.node.y < height && next.node.x >= 0 && map[GetIndex(next.node)] && left && down){
+        neighbors[i] = next;
+        i++;
+    }
+
+    // for(int j=0;j<i;j++){
+    //     cout<< neighbors[j].node.x << " " << neighbors[j].node.y << endl;
+    // }
+    return i;
 }
 

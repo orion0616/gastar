@@ -50,27 +50,34 @@ struct stats {
         for (int x = 0; x < (int)path.size()-1; x++)
         {
             if (abs(path[x].x - path[x+1].x) > 1) {
+                cout << "case1 error" << endl;
                 return false;
             }
             if (abs(path[x].y - path[x+1].y) > 1) {
+                cout << "case2 error" << endl;
                 return false;
             }
             if (!mapData[path[x].y*width+path[x].x]) {
+                cout << "case3 error" << endl;
                 return false;
             }
             if (!mapData[path[x+1].y*width+path[x+1].x]) {
+                cout << "case4 error" << endl;
                 return false;
             }
             if (path[x].x != path[x+1].x && path[x].y != path[x+1].y)
             {
                 if (!mapData[path[x+1].y*width+path[x].x]) {
+                    cout << "case5 error" << endl;
                     return false;
                 }
                 if (!mapData[path[x].y*width+path[x+1].x]) {
+                    cout << "case6 error" << endl;
                     return false;
                 }
             }
         }
+        // cout << "error nainndayona" << endl;
         return true;
     }
 };
@@ -141,6 +148,8 @@ int main(int argc, char **argv)
 
     Timer t;
     std::vector<stats> experimentStats;
+    //XXX
+    // for (int x = 0; x <500;x++)
     for (int x = 0; x < scen.GetNumExperiments(); x++)
     {
         //printf("%d of %d\n", x+1, scen.GetNumExperiments());
@@ -155,7 +164,7 @@ int main(int argc, char **argv)
             g.y = scen.GetNthExperiment(x).GetGoalY();
 
             t.StartTimer();
-            if (strcmp(argv[4], "astar") == 0) {
+            if (strcmp(argv[4], "gastar") == 0) {
                 done = GetPath_GASTAR(reference, s, g, thePath);
             } else {
                 std::cerr << "invalid algorithm is set. exit" << std::endl;
@@ -175,7 +184,7 @@ int main(int argc, char **argv)
                 if (fout.fail()) {
                     std::cout << "Opening the input file failed." << std::endl;
                     exit(1);
-                fout.close();
+                    fout.close();
                 }
             }
             for (unsigned int t = experimentStats[x].path.size(); t < thePath.size(); t++)
@@ -199,6 +208,11 @@ int main(int argc, char **argv)
             printf("valid\n");
         }
         else {
+            // cout <<endl;
+            // cout << scen.GetNthExperiment(x).GetStartX() << " "<< experimentStats[x].path[0].x << endl;
+            // cout << scen.GetNthExperiment(x).GetStartY() << " " <<  experimentStats[x].path[0].y << endl;
+            // cout << scen.GetNthExperiment(x).GetGoalX() << " " <<  experimentStats[x].path.back().x <<endl;
+            // cout << scen.GetNthExperiment(x).GetGoalY() << " " <<  experimentStats[x].path.back().y << endl;
             printf("invalid\n");
         }
     }
