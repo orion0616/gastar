@@ -49,6 +49,7 @@ void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int 
     if (!min.ptr->isOpen)
         return;
 
+    min.ptr->isOpen = false;
     if (min.ptr->node.x == goal.x && min.ptr->node.y == goal.y) {
         if (m.isNil() || min.ptr->f_value < m.f_value) {
             m = *(min.ptr);
