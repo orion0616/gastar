@@ -149,8 +149,8 @@ int main(int argc, char **argv)
     Timer t;
     std::vector<stats> experimentStats;
     //XXX
-    // for (int x = 0; x <300;x++)
-    for (int x = 0; x < scen.GetNumExperiments(); x++)
+    for (int x = 0; x <1;x++)
+    // for (int x = 0; x < scen.GetNumExperiments(); x++)
     {
         //printf("%d of %d\n", x+1, scen.GetNumExperiments());
         thePath.resize(0);
