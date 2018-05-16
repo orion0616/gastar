@@ -131,15 +131,17 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         }
         bool pathFound = false;
         if (!m.isNil()) {
+            pathFound = true;
             for(int i=0; i< N; i++) {
                 if (pqs[i].empty()){
                     continue;
                 } else {
-                    if(m.f_value > pqs[i].top().ptr->f_value)
+                    if(m.f_value > pqs[i].top().ptr->f_value){
+                        pathFound = false;
                         break;
+                    }
                 }
             }
-            pathFound = true;
         }
         if(pathFound){
             free(S);
