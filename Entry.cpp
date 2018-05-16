@@ -37,7 +37,7 @@ void *PrepareForSearch(std::vector<bool> &bits, int w, int h, const char *filena
     return (void *)13182;
 }
 
-void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int num, state* neighbors){
+void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int num, state** neighbors){
     if (pqs[num].empty()){
         return;
     }
@@ -56,9 +56,9 @@ void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int 
         }
     }
 
-    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, goal);
+    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors[num], goal);
     for(int i= 0;i<numOfNeighbors; i++) {
-        S[num][i] = neighbors[i];
+        S[num][i] = neighbors[num][i];
     }
     return;
 }
@@ -124,15 +124,15 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
                 S[i][j] = nil;
             }
         }
-        state* neighbors = (state*)malloc(sizeof(state)*8);
-        for(int j=0;j<8;j++){
-            neighbors[j] = nil;
+        state** neighbors = (state**)malloc(sizeof(state*)*N);
+        for(int i=0;i<N;i++){
+            neighbors[i] = (state*)malloc(sizeof(state)*8);
+            for(int j=0;j<8;j++){
+                neighbors[i][j] = nil;
+            }
         }
         for (int i=0;i<N;i++){
             remove(table, pqs, S, g, m, i, neighbors);
-            for(int j=0;j<8;j++){
-                neighbors[j] = nil;
-            }
         }
         bool pathFound = false;
         if (!m.isNil()) {
@@ -151,6 +151,9 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
                 free(S[i]);
             }
             free(S);
+            for(int i=0;i<N;i++){
+                free(neighbors[i]);
+            }
             free(neighbors);
             break;
         }
@@ -162,6 +165,9 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             free(S[i]);
         }
         free(S);
+        for(int i=0;i<N;i++){
+            free(neighbors[i]);
+        }
         free(neighbors);
     }
 
