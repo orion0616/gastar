@@ -37,7 +37,7 @@ void *PrepareForSearch(std::vector<bool> &bits, int w, int h, const char *filena
     return (void *)13182;
 }
 
-void remove(BinaryHeap* pqs, state*** S, xyLoc goal, state &m, int num){
+void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int num, state* neighbors){
     if (pqs[num].empty()){
         return;
     }
@@ -46,10 +46,8 @@ void remove(BinaryHeap* pqs, state*** S, xyLoc goal, state &m, int num){
     do {
         min = pqs[num].remove();
     } while(!min.ptr->isOpen && !pqs[num].empty());
-    //XXX
     if (!min.ptr->isOpen)
         return;
-
 
     if (min.ptr->node.x == goal.x && min.ptr->node.y == goal.y) {
         if (m.isNil() || min.ptr->f_value < m.f_value) {
@@ -57,14 +55,10 @@ void remove(BinaryHeap* pqs, state*** S, xyLoc goal, state &m, int num){
         }
     }
 
-    state* neighbors = (state*)malloc(sizeof(state)*8);
-    // int numOfNeighbors = GetSuccessors_for_gastar(min.ptr, S[num], goal);
-    int numOfNeighbors = GetSuccessors_for_gastar(min.ptr, neighbors, goal);
+    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, goal);
     for(int i= 0;i<numOfNeighbors; i++) {
-        S[num][i] = &neighbors[i];
+        S[num][i] = neighbors[i];
     }
-    //XXX
-    // free(neighbors);
     return;
 }
 
@@ -77,25 +71,23 @@ bool isAllQueueEmpty(BinaryHeap* pqs) {
     return true;
 }
 
-void duplicate_detection(state** table, BinaryHeap* pqs, state*** S, int num){
+void duplicate_detection(state* table, BinaryHeap* pqs, state** S, int num){
     for(int i=0;i<8;i++) {
-        state* s = S[num][i];
-        if(s->isNil()){
+        state s = S[num][i];
+        if(s.isNil()){
             return;
         }
-        state* old = table[s->hash()];
-        if (!old->isNil() && old->g_value <= s->g_value) {
+        state old = table[s.hash()];
+        if (!old.isNil() && old.g_value <= s.g_value) {
             continue;
         } else {
             std::random_device rd;
 	        std::mt19937 mt(rd());
             int result = mt()%N;
 
-            stateWithF froms(s);
+            table[s.hash()] = s;
+            stateWithF froms(&table[s.hash()]);
             pqs[result].add(froms);
-            // cout << "pq number -> " << result << "! Add ("<< froms.ptr->node.x << " " << froms.ptr->node.y << ")"<<  endl;
-
-            table[s->hash()] = s;
         }
     }
     return;
@@ -110,12 +102,13 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     state initial(s,g);
     state nil(xyLoc(-1,-1), xyLoc(-1,-1));
     state m = nil;
-    pqs[0].add(stateWithF(&initial));
 
-    state** table = (state**)malloc(sizeof(state*)*width*height);
+    state* table = (state*)malloc(sizeof(state)*width*height);
     for(int i=0; i<width*height; i++){
-        table[i] = &nil;
+        table[i] = nil;
     }
+    table[initial.hash()] = initial;
+    pqs[0].add(stateWithF(&table[initial.hash()]));
 
     if(path.size() > 0) {
         path.push_back(g);
@@ -123,17 +116,23 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     }
 
     while(!isAllQueueEmpty(pqs)) {
-        state***  S= (state***)malloc(sizeof(state**)*N);
+        state**  S= (state**)malloc(sizeof(state*)*N);
         for (int i=0;i<N;i++) {
-	        S[i] = (state**)malloc(sizeof(state*)*8);
+	        S[i] = (state*)malloc(sizeof(state)*8);
             for(int j=0;j<8;j++){
-                S[i][j] = &nil;
+                S[i][j] = nil;
             }
         }
-        for (int i=0;i<N;i++){
-            remove(pqs, S, g, m, i);
+        state* neighbors = (state*)malloc(sizeof(state)*8);
+        for(int j=0;j<8;j++){
+            neighbors[j] = nil;
         }
-
+        for (int i=0;i<N;i++){
+            remove(table, pqs, S, g, m, i, neighbors);
+            for(int j=0;j<8;j++){
+                neighbors[j] = nil;
+            }
+        }
         bool pathFound = false;
         if (!m.isNil()) {
             for(int i=0; i< N; i++) {
@@ -151,6 +150,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
                 free(S[i]);
             }
             free(S);
+            free(neighbors);
             break;
         }
         for (int i=0; i< N;i++){
@@ -161,11 +161,11 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             free(S[i]);
         }
         free(S);
+        free(neighbors);
     }
 
     state last = m;
     while(last.node.x != s.x || last.node.y != s.y) {
-        // cout << last.node.x << " " << last.node.y << endl;
         xyLoc pos;
         pos.x = last.node.x;
         pos.y = last.node.y;

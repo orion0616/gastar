@@ -48,7 +48,6 @@ struct state {
     bool isNil() {
         return this->node.x == -1 && this->node.y == -1;
     }
-    //XXX
     int hash() {
         // return (node.x+1)*10000+node.y;
         return (node.x)*height + node.y;
