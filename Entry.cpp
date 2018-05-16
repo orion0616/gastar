@@ -37,7 +37,7 @@ void *PrepareForSearch(std::vector<bool> &bits, int w, int h, const char *filena
     return (void *)13182;
 }
 
-void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int num, state** neighbors){
+void remove(state* table, BinaryHeap* pqs, state* S, xyLoc goal, state &m, int num, state* neighbors){
     if (pqs[num].empty()){
         return;
     }
@@ -56,9 +56,9 @@ void remove(state* table, BinaryHeap* pqs, state** S, xyLoc goal, state &m, int 
         }
     }
 
-    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors[num], goal);
+    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal);
     for(int i= 0;i<numOfNeighbors; i++) {
-        S[num][i] = neighbors[num][i];
+        S[num*8+i] = neighbors[num*8+i];
     }
     return;
 }
@@ -72,9 +72,9 @@ bool isAllQueueEmpty(BinaryHeap* pqs) {
     return true;
 }
 
-void duplicate_detection(state* table, BinaryHeap* pqs, state** S, int num){
+void duplicate_detection(state* table, BinaryHeap* pqs, state* S, int num){
     for(int i=0;i<8;i++) {
-        state s = S[num][i];
+        state s = S[num*8+i];
         if(s.isNil()){
             return;
         }
@@ -117,19 +117,14 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     }
 
     while(!isAllQueueEmpty(pqs)) {
-        state**  S= (state**)malloc(sizeof(state*)*N);
-        for (int i=0;i<N;i++) {
-	        S[i] = (state*)malloc(sizeof(state)*8);
-            for(int j=0;j<8;j++){
-                S[i][j] = nil;
-            }
+        state*  S= (state*)malloc(sizeof(state)*N*8);
+        for(int i=0;i<8*N;i++){
+            S[i] = nil;
         }
-        state** neighbors = (state**)malloc(sizeof(state*)*N);
-        for(int i=0;i<N;i++){
-            neighbors[i] = (state*)malloc(sizeof(state)*8);
-            for(int j=0;j<8;j++){
-                neighbors[i][j] = nil;
-            }
+
+        state* neighbors = (state*)malloc(sizeof(state)*N*8);
+        for(int i=0;i<8*N;i++){
+            neighbors[i] = nil;
         }
         for (int i=0;i<N;i++){
             remove(table, pqs, S, g, m, i, neighbors);
@@ -147,13 +142,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             pathFound = true;
         }
         if(pathFound){
-            for(int i=0;i<N;i++){
-                free(S[i]);
-            }
             free(S);
-            for(int i=0;i<N;i++){
-                free(neighbors[i]);
-            }
             free(neighbors);
             break;
         }
@@ -161,13 +150,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             duplicate_detection(table, pqs, S, i);
         }
 
-        for(int i=0;i<N;i++){
-            free(S[i]);
-        }
         free(S);
-        for(int i=0;i<N;i++){
-            free(neighbors[i]);
-        }
         free(neighbors);
     }
 
@@ -245,52 +228,52 @@ state create_next_state(state &orig, xyLoc goal, Direction d) {
 // @param neighbors: an array of pointers which points state*. It stores neighbors
 // @param g: goal
 // @return : the number of neighbors.
-int GetSuccessors_for_gastar(state* s, state* neighbors, xyLoc g) {
+int GetSuccessors_for_gastar(state* s, state* neighbors, int num, xyLoc g) {
     bool up = false, down = false, left = false, right = false;
     int i = 0;
 
     state next = create_next_state(*s,g,RIGHT);
     if (next.node.x < width && map[GetIndex(next.node)]) {
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
         right = true;
     }
     next = create_next_state(*s,g,LEFT);
     if (next.node.x >= 0 && map[GetIndex(next.node)]) {
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
         left = true;
     }
     next = create_next_state(*s,g,UP);
     if (next.node.y >= 0 && map[GetIndex(next.node)]) {
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
         up = true;
     }
     next = create_next_state(*s,g,DOWN);
     if (next.node.y < height && map[GetIndex(next.node)]) {
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
         down = true;
     }
     next = create_next_state(*s,g,LOWERRIGHT);
     if (next.node.y < height && next.node.x < width && map[GetIndex(next.node)] && right && down){
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
     }
     next = create_next_state(*s,g,UPPERRIGHT);
     if (next.node.y >= 0 &&  next.node.x < width && map[GetIndex(next.node)] && right && up){
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
     }
     next = create_next_state(*s,g,UPPERLEFT);
     if (next.node.y >= 0 && next.node.x >= 0 && map[GetIndex(next.node)] && left && up){
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
     }
     next = create_next_state(*s,g,LOWERLEFT);
     if (next.node.y < height && next.node.x >= 0 && map[GetIndex(next.node)] && left && down){
-        neighbors[i] = next;
+        neighbors[num*8+i] = next;
         i++;
     }
 

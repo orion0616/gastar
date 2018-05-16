@@ -4,7 +4,7 @@
 #include <functional>
 #include "BinaryHeap.h"
 
-int GetSuccessors_for_gastar(state* s, state* neighbors, xyLoc g);
+int GetSuccessors_for_gastar(state* s, state* neighbors, int num, xyLoc g);
 void PreprocessMap(std::vector<bool> &bits, int width, int height, const char *filename);
 void *PrepareForSearch(std::vector<bool> &bits, int width, int height, const char *filename);
 const char *GetName();
