@@ -23,8 +23,8 @@ enum Direction
 struct xyLoc {
     int16_t x;
     int16_t y;
-    xyLoc(){};
-    xyLoc(int16_t x, int16_t y) {
+    __host__ __device__ xyLoc(){};
+    __host__ __device__ xyLoc(int16_t x, int16_t y) {
         this->x = x;
         this->y = y;
     }

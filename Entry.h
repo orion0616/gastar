@@ -13,4 +13,4 @@ void printPath(std::vector<xyLoc> path);
 // void GetSuccessors(xyLoc s, std::vector<xyLoc> & neighbors);
 __device__ int GetIndex(xyLoc s);
 bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path);
-void duplicate_detection(state** table, BinaryHeap* pqs, std::vector<std::vector<state*> >S);
+// void duplicate_detection(state** table, BinaryHeap* pqs, std::vector<std::vector<state*> >S);

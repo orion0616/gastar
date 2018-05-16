@@ -9,7 +9,7 @@ using namespace std;
 class BinaryHeap {
 public:
     int n;
-    stateWithF a[1000];
+    stateWithF* a;
 
     __host__ __device__ void bubbleUp(int i){
         int p = parent(i);
@@ -59,7 +59,11 @@ public:
         return (i-1)/2;
     }
     BinaryHeap(){};
-    ~BinaryHeap(){};
+    __host__ __device__ BinaryHeap(stateWithF* array, int n){
+        this->a = array;
+        this->n = n;
+    };
+    __host__ __device__ ~BinaryHeap(){};
     __host__ __device__ bool add(stateWithF x){
         a[n] = x;
         n++;
