@@ -58,6 +58,7 @@ __device__ void Rand(unsigned int* randx) {
 }
 
 __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map){
+    printf("Start removing\n");
     int num = threadIdx.x;
     stateWithF elem[M];
     for(int i=0;i<M;i++){
@@ -67,20 +68,26 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     if (pq.empty()){
         return;
     }
+    printf("Start choosing\n");
+    printf("%d\n", true);
 
     stateWithF min;
     do {
         min = pq.remove();
+        printf("%d %d -> open?:%d,    goal is %d,%d\n", min.ptr->node.x, min.ptr->node.y, min.ptr->isOpen, goal.x, goal.y);
     } while(!min.ptr->isOpen && !pq.empty());
     if (!min.ptr->isOpen)
         return;
 
     min.ptr->isOpen = false;
     if (min.ptr->node.x == goal.x && min.ptr->node.y == goal.y) {
+        printf("Found! %d %d -> open?:%d\n", min.ptr->node.x, min.ptr->node.y, min.ptr->isOpen);
         if (d_m.isNil() || min.ptr->f_value < d_m.f_value) {
+            printf("d_m change!!\n");
             d_m = *(min.ptr);
         }
     }
+    printf("Start extracting\n");
 
     int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map);
     for(int i= 0;i<numOfNeighbors; i++) {
@@ -266,11 +273,13 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
 
         bool pathFound = false;
         if (!m.isNil()) {
+            cout <<"これでいいかチェックします！" << endl;
             pathFound = true;
             for(int i=0; i< N; i++) {
                 if (h_lengths[i] == 0){
                     continue;
                 } else {
+                    cout << m.f_value << " " << h_array[M*i].fWhenInserted << endl;
                     if(m.f_value > h_array[M*i].fWhenInserted){
                         pathFound = false;
                         break;
@@ -278,6 +287,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
                 }
             }
         }
+        cout<< pathFound << endl;
         if(pathFound){
             free(S);
             free(neighbors);
@@ -292,6 +302,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         cudaFree(d_S);
         cudaFree(d_neighbors);
     }
+    cout << "HERE?" << endl;
     free(h_array);
     for(int i=0;i<N;i++){
         free(pqs[i].a);
