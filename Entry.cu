@@ -28,6 +28,7 @@ std::vector<int> visited;
 std::vector<xyLoc> succ;
 int h_width, h_height;
 __device__ state d_initial;
+__device__ state d_nil;
 __device__ state d_m;
 
 using namespace std;
@@ -57,7 +58,7 @@ __device__ void Rand(unsigned int* randx) {
     return;
 }
 
-__global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map){
+__global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map, state* kouho){
     printf("Start removing\n");
     int num = threadIdx.x;
     stateWithF elem[M];
@@ -81,10 +82,11 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
 
     min.ptr->isOpen = false;
     if (min.ptr->node.x == goal.x && min.ptr->node.y == goal.y) {
-        printf("Found! %d %d -> open?:%d\n", min.ptr->node.x, min.ptr->node.y, min.ptr->isOpen);
+        /* printf("Found! %d %d -> open?:%d\n", min.ptr->node.x, min.ptr->node.y, min.ptr->isOpen); */
         if (d_m.isNil() || min.ptr->f_value < d_m.f_value) {
-            printf("d_m change!!\n");
-            d_m = *(min.ptr);
+            kouho[num] = *(min.ptr);
+            /* printf("d_m change!!\n"); */
+            /* d_m = *(min.ptr);         */
         }
     }
     printf("Start extracting\n");
@@ -92,7 +94,9 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map);
     for(int i= 0;i<numOfNeighbors; i++) {
         S[num*8+i]= neighbors[num*8+i];
+        printf("%d %d\n", S[num*8+i].node.x, S[num*8+i].node.y);
     }
+    printf("End extracting\n");
     return;
 }
 
@@ -107,18 +111,22 @@ bool isAllQueueEmpty(int* lengths) {
 
 __global__ void duplicate_detection(state* table, int *lengths, stateWithF* array, state* S, unsigned int* random){
     int num = threadIdx.x;
+    printf("start duplidate\n");
     for(int i=0;i<8;i++) {
         state s = S[num*8+i];
         if(s.isNil()){
             return;
         }
-        state old = table[s.hash()];
-        if (!old.isNil() && old.g_value <= s.g_value) {
-            continue;
-        } else {
+        while(table[s.hash()].isNil() || table[s.hash()].g_value > s.g_value){
+            // this must be atomic
+            //XXX
+
+            table[s.hash()] = s;
+
+            if (s.g_value != table[s.hash()].g_value)
+                continue;
             Rand(random);
             int result = random[num]%N;
-            table[s.hash()] = s;
             stateWithF froms(&table[s.hash()]);
             stateWithF tmp[M];
             for(int i=0;i<M;i++){
@@ -132,11 +140,30 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
             }
 
         }
+        /* if (old.isNil() || old.g_value > s.g_value) {         */
+        /*     table[s.hash()] = s;                              */
+        /*     if(s != table[s.hash()])                          */
+
+
+        /*     Rand(random);                                     */
+        /*     int result = random[num]%N;                       */
+        /*     stateWithF froms(&table[s.hash()]);               */
+        /*     stateWithF tmp[M];                                */
+        /*     for(int i=0;i<M;i++){                             */
+        /*         tmp[i] = array[i+M*result];                   */
+        /*     }                                                 */
+        /*     BinaryHeap pq = BinaryHeap(tmp, lengths[result]); */
+        /*     pq.add(froms);                                    */
+        /*     lengths[result] = pq.n;                           */
+        /*     for(int i=0;i<M;i++){                             */
+        /*         array[i+M*result] = pq.a[i];                  */
+        /*     }                                                 */
+        /* }                                                     */
     }
     return;
 }
 
-__global__ void init(state*table, int* lengths, stateWithF* array) {
+__global__ void init(state* table, int* lengths, stateWithF* array) {
     table[d_initial.hash()] = d_initial;
     stateWithF swf = stateWithF(&table[d_initial.hash()]);
     stateWithF tmp[M];
@@ -172,7 +199,6 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     CHECK(cudaMemcpyToSymbol(width, &h_width, sizeof(int)));
     CHECK(cudaMemcpyToSymbol(height, &h_height, sizeof(int)));
 
-
     int mapsize = map.size();
     bool h_map[mapsize];
     bool *d_map;
@@ -204,6 +230,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     state nil(xyLoc(-1,-1), xyLoc(-1,-1));
     state m = nil;
     CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
+    CHECK(cudaMemcpyToSymbol(d_nil, &m, sizeof(state)));
 
 
     state* h_table = (state*)malloc(sizeof(state)*h_width*h_height);
@@ -264,12 +291,35 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         CHECK(cudaMemcpy(d_neighbors, neighbors, 8*N*sizeof(state), cudaMemcpyHostToDevice));
 
         CHECK(cudaMemcpy(d_lengths, h_lengths, N*sizeof(int), cudaMemcpyHostToDevice));
-        remove<<<1,N>>>(d_table, d_lengths, d_array, d_S, g, d_neighbors, d_map);
+
+        state* d_kouho;
+        state h_kouho[N];
+        for(int i=0;i<N;i++){
+            h_kouho[i] = nil;
+        }
+        CHECK(cudaMalloc((state**)&d_kouho, N*sizeof(state)));
+        CHECK(cudaMemcpy(d_kouho, h_kouho, N*sizeof(state), cudaMemcpyHostToDevice));
+
+
+
+        cout << "start removing\n" << endl;
+        remove<<<1,N>>>(d_table, d_lengths, d_array, d_S, g, d_neighbors, d_map, d_kouho);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaMemcpy(h_array, d_array, M*N*sizeof(stateWithF), cudaMemcpyDeviceToHost));
+        CHECK(cudaMemcpy(h_kouho, d_kouho, N*sizeof(state), cudaMemcpyDeviceToHost));
+        for(int i=0;i<N;i++){
+            if(h_kouho[i].isNil()){
+                cout << "kouho is nil" << endl;
+            } else{
+                if(m.isNil() || m.f_value > h_kouho[i].f_value)
+                    m = h_kouho[i];
+            }
+        }
+        cout << "For end" << endl;
 
-        CHECK(cudaMemcpyFromSymbol(&m, d_m, sizeof(state)));
+
+        /* CHECK(cudaMemcpyFromSymbol(&m, d_m, sizeof(state))); */
 
         bool pathFound = false;
         if (!m.isNil()) {
@@ -286,13 +336,14 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
                     }
                 }
             }
+            CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
         }
-        cout<< pathFound << endl;
         if(pathFound){
             free(S);
             free(neighbors);
             break;
         }
+        cout << "start duplicate detection\n" << endl;
         duplicate_detection<<<1,N>>>(d_table, d_lengths, d_array, d_S, d_random);
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaDeviceSynchronize());
@@ -301,6 +352,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         free(neighbors);
         cudaFree(d_S);
         cudaFree(d_neighbors);
+        cudaFree(d_kouho);
     }
     cout << "HERE?" << endl;
     free(h_array);

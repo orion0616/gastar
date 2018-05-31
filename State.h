@@ -5,7 +5,7 @@
 #include <cuda_runtime.h>
 
 __device__ int height;
- __device__ int width;
+__device__ int width;
 extern int h_height, h_width;
 
 enum Direction
