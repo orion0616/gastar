@@ -30,6 +30,7 @@ int h_width, h_height;
 __device__ state d_initial;
 __device__ state d_nil;
 __device__ state d_m;
+__device__ int id;
 
 using namespace std;
 
@@ -58,7 +59,7 @@ __device__ void Rand(unsigned int* randx) {
     return;
 }
 
-__global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map, state* kouho){
+__global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map, state* kouho, int* closed_list){
     printf("Start removing\n");
     int num = threadIdx.x;
     stateWithF elem[M];
@@ -69,8 +70,7 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     if (pq.empty()){
         return;
     }
-    printf("Start choosing\n");
-    printf("%d\n", true);
+    printf("Start choosing # is%d\n", pq.size());
 
     stateWithF min;
     do {
@@ -91,7 +91,8 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     }
     printf("Start extracting\n");
 
-    int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map);
+    int numOfNeighbors = GetSuccessors_for_gastar(&table[closed_list[min.ptr->hash()]], neighbors, num, goal, d_map);
+    /* int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map); */
     for(int i= 0;i<numOfNeighbors; i++) {
         S[num*8+i]= neighbors[num*8+i];
         printf("%d %d\n", S[num*8+i].node.x, S[num*8+i].node.y);
@@ -109,7 +110,7 @@ bool isAllQueueEmpty(int* lengths) {
     return true;
 }
 
-__global__ void duplicate_detection(state* table, int *lengths, stateWithF* array, state* S, unsigned int* random){
+__global__ void duplicate_detection(state* table, int *lengths, stateWithF* array, state* S, unsigned int* random, int* closed_list){
     int num = threadIdx.x;
     printf("start duplidate\n");
     for(int i=0;i<8;i++) {
@@ -117,17 +118,28 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
         if(s.isNil()){
             return;
         }
-        while(table[s.hash()].isNil() || table[s.hash()].g_value > s.g_value){
-            // this must be atomic
-            //XXX
+        int myid = atomicAdd(&id, 1);
+        table[myid] = s;
 
-            table[s.hash()] = s;
+        int old = closed_list[s.hash()];
+        __threadfence();
 
-            if (s.g_value != table[s.hash()].g_value)
-                continue;
+        while(closed_list[s.hash()] == -1 || table[closed_list[s.hash()]].g_value > s.g_value){
+            atomicCAS(&closed_list[s.hash()], old, myid);
+            closed_list[s.hash()] = myid;
+            old = closed_list[s.hash()];
+            __threadfence();
+        }
+        __threadfence();
+        /* while(table[closed_list[s.hash()]].g_value > s.g_value){ */
+        /*     closed_list[s.hash()] = myid;                        */
+        /* }                                                        */
+        /* __threadfence();                                         */
+        if (closed_list[s.hash()] == myid){
+            printf("add\n");
             Rand(random);
             int result = random[num]%N;
-            stateWithF froms(&table[s.hash()]);
+            stateWithF froms(&table[myid]);
             stateWithF tmp[M];
             for(int i=0;i<M;i++){
                 tmp[i] = array[i+M*result];
@@ -138,8 +150,32 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
             for(int i=0;i<M;i++){
                 array[i+M*result] = pq.a[i];
             }
-
         }
+
+
+
+        /* while(table[s.hash()].isNil() || table[s.hash()].g_value > s.g_value){ */
+        /*     // this must be atomic                                             */
+        /*     //XXX                                                              */
+        /*     table[s.hash()] = s;                                               */
+
+        /*     if (s.g_value != table[s.hash()].g_value)                          */
+        /*         continue;                                                      */
+        /*     Rand(random);                                                      */
+        /*     int result = random[num]%N;                                        */
+        /*     stateWithF froms(&table[s.hash()]);                                */
+        /*     stateWithF tmp[M];                                                 */
+        /*     for(int i=0;i<M;i++){                                              */
+        /*         tmp[i] = array[i+M*result];                                    */
+        /*     }                                                                  */
+        /*     BinaryHeap pq = BinaryHeap(tmp, lengths[result]);                  */
+        /*     pq.add(froms);                                                     */
+        /*     lengths[result] = pq.n;                                            */
+        /*     for(int i=0;i<M;i++){                                              */
+        /*         array[i+M*result] = pq.a[i];                                   */
+        /*     }                                                                  */
+
+        /* }                                                                      */
         /* if (old.isNil() || old.g_value > s.g_value) {         */
         /*     table[s.hash()] = s;                              */
         /*     if(s != table[s.hash()])                          */
@@ -196,6 +232,9 @@ __global__ void path_create(xyLoc* d_path, xyLoc s){
 
 
 bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
+    int h_id = 0;
+    CHECK(cudaMemcpyToSymbol(id, &h_id, sizeof(int)));
+
     CHECK(cudaMemcpyToSymbol(width, &h_width, sizeof(int)));
     CHECK(cudaMemcpyToSymbol(height, &h_height, sizeof(int)));
 
@@ -233,14 +272,25 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     CHECK(cudaMemcpyToSymbol(d_nil, &m, sizeof(state)));
 
 
-    state* h_table = (state*)malloc(sizeof(state)*h_width*h_height);
+    // XXX:
+    // must change length
+    state* h_table = (state*)malloc(sizeof(state)*1000000);
     state* d_table;
-    for(int i=0; i<h_width*h_height; i++){
+    for(int i=0; i<1000000; i++){
         h_table[i] = nil;
     }
     h_table[initial.h_hash()] = initial;
-    CHECK(cudaMalloc((state**)&d_table, h_width*h_height*sizeof(state)));
-    CHECK(cudaMemcpy(d_table, h_table, h_width*h_height*sizeof(state), cudaMemcpyHostToDevice));
+    CHECK(cudaMalloc((state**)&d_table, 1000000*sizeof(state)));
+    CHECK(cudaMemcpy(d_table, h_table, 1000000*sizeof(state), cudaMemcpyHostToDevice));
+    CHECK(cudaDeviceSynchronize());
+
+    int* h_closed_list = (int*)malloc(sizeof(int)*h_width*h_height);
+    int* d_closed_list;
+    for(int i=0; i<h_width*h_height; i++){
+        h_closed_list[i] = -1;
+    }
+    CHECK(cudaMalloc((int**)&d_closed_list, sizeof(int)*h_width*h_height));
+    CHECK(cudaMemcpy(d_closed_list, h_closed_list, h_width*h_height*sizeof(int), cudaMemcpyHostToDevice));
     CHECK(cudaDeviceSynchronize());
 
 
@@ -303,7 +353,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
 
 
         cout << "start removing\n" << endl;
-        remove<<<1,N>>>(d_table, d_lengths, d_array, d_S, g, d_neighbors, d_map, d_kouho);
+        remove<<<1,N>>>(d_table, d_lengths, d_array, d_S, g, d_neighbors, d_map, d_kouho, d_closed_list);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaMemcpy(h_array, d_array, M*N*sizeof(stateWithF), cudaMemcpyDeviceToHost));
@@ -344,7 +394,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             break;
         }
         cout << "start duplicate detection\n" << endl;
-        duplicate_detection<<<1,N>>>(d_table, d_lengths, d_array, d_S, d_random);
+        duplicate_detection<<<1,N>>>(d_table, d_lengths, d_array, d_S, d_random, d_closed_list);
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaDeviceSynchronize());
 

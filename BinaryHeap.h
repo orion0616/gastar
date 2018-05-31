@@ -80,7 +80,7 @@ public:
     stateWithF top() {
         return a[0];
     }
-    int size() {
+    __host__ __device__ int size() {
         return n;
     }
 };
