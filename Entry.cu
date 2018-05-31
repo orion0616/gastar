@@ -70,7 +70,7 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     if (pq.empty()){
         return;
     }
-    printf("Start choosing # is%d\n", pq.size());
+    printf("Pq %dth. Start choosing. The number of elements is %d. \n", num, pq.size());
 
     stateWithF min;
     do {
@@ -92,6 +92,7 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     printf("Start extracting\n");
 
     int numOfNeighbors = GetSuccessors_for_gastar(&table[closed_list[min.ptr->hash()]], neighbors, num, goal, d_map);
+    printf("created neighbors\n");
     /* int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map); */
     for(int i= 0;i<numOfNeighbors; i++) {
         S[num*8+i]= neighbors[num*8+i];
@@ -136,7 +137,6 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
         /* }                                                        */
         /* __threadfence();                                         */
         if (closed_list[s.hash()] == myid){
-            printf("add\n");
             Rand(random);
             int result = random[num]%N;
             stateWithF froms(&table[myid]);
@@ -150,6 +150,7 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
             for(int i=0;i<M;i++){
                 array[i+M*result] = pq.a[i];
             }
+            printf("add (%d,%d) to pq %d when f-value is %d\n", table[myid].node.x, table[myid].node.y, result, froms.fWhenInserted);
         }
 
 
@@ -232,7 +233,7 @@ __global__ void path_create(xyLoc* d_path, xyLoc s){
 
 
 bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
-    int h_id = 0;
+    int h_id = 1;
     CHECK(cudaMemcpyToSymbol(id, &h_id, sizeof(int)));
 
     CHECK(cudaMemcpyToSymbol(width, &h_width, sizeof(int)));
@@ -279,7 +280,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     for(int i=0; i<1000000; i++){
         h_table[i] = nil;
     }
-    h_table[initial.h_hash()] = initial;
+    h_table[0] = initial;
     CHECK(cudaMalloc((state**)&d_table, 1000000*sizeof(state)));
     CHECK(cudaMemcpy(d_table, h_table, 1000000*sizeof(state), cudaMemcpyHostToDevice));
     CHECK(cudaDeviceSynchronize());
@@ -289,6 +290,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     for(int i=0; i<h_width*h_height; i++){
         h_closed_list[i] = -1;
     }
+    h_closed_list[initial.h_hash()] = 0;
     CHECK(cudaMalloc((int**)&d_closed_list, sizeof(int)*h_width*h_height));
     CHECK(cudaMemcpy(d_closed_list, h_closed_list, h_width*h_height*sizeof(int), cudaMemcpyHostToDevice));
     CHECK(cudaDeviceSynchronize());
