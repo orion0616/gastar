@@ -10,8 +10,8 @@
 #include <curand_kernel.h>
 #include "Entry.h"
 
-#define N 4
-#define M 100
+#define N 128
+#define M 200
 
 #define CHECK(call)                                                          \
 {                                                                            \
@@ -60,7 +60,7 @@ __device__ void Rand(unsigned int* randx) {
 }
 
 __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, xyLoc goal, state* neighbors, bool* d_map, state* kouho, int* closed_list){
-    printf("Start removing\n");
+    /* printf("Start removing\n"); */
     int num = threadIdx.x;
     stateWithF elem[M];
     for(int i=0;i<M;i++){
@@ -70,13 +70,17 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
     if (pq.empty()){
         return;
     }
-    printf("Pq %dth. Start choosing. The number of elements is %d. \n", num, pq.size());
+    /* printf("Pq %dth. Start choosing. The number of elements is %d. \n", num, pq.size()); */
 
     stateWithF min;
     do {
         min = pq.remove();
-        printf("%d %d -> open?:%d,    goal is %d,%d\n", min.ptr->node.x, min.ptr->node.y, min.ptr->isOpen, goal.x, goal.y);
+        /* printf("choose %d %d from pq%d-> open?:%d,    goal is %d,%d\n", min.ptr->node.x, min.ptr->node.y, num, min.ptr->isOpen, goal.x, goal.y); */
     } while(!min.ptr->isOpen && !pq.empty());
+    lengths[num] = pq.size();
+    for(int i=0;i<M;i++){
+        array[num*M+i] = pq.a[i];
+    }
     if (!min.ptr->isOpen)
         return;
 
@@ -89,16 +93,16 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
             /* d_m = *(min.ptr);         */
         }
     }
-    printf("Start extracting\n");
+    /* printf("Start extracting\n"); */
 
     int numOfNeighbors = GetSuccessors_for_gastar(&table[closed_list[min.ptr->hash()]], neighbors, num, goal, d_map);
-    printf("created neighbors\n");
+    /* printf("created neighbors\n"); */
     /* int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map); */
     for(int i= 0;i<numOfNeighbors; i++) {
         S[num*8+i]= neighbors[num*8+i];
-        printf("%d %d\n", S[num*8+i].node.x, S[num*8+i].node.y);
+        /* printf("%d %d\n", S[num*8+i].node.x, S[num*8+i].node.y); */
     }
-    printf("End extracting\n");
+    /* printf("End extracting\n"); */
     return;
 }
 
@@ -113,7 +117,10 @@ bool isAllQueueEmpty(int* lengths) {
 
 __global__ void duplicate_detection(state* table, int *lengths, stateWithF* array, state* S, unsigned int* random, int* closed_list){
     int num = threadIdx.x;
-    printf("start duplidate\n");
+    /* printf("start duplidate in pq %d\n", num); */
+
+    // XXX
+    int j = num;
     for(int i=0;i<8;i++) {
         state s = S[num*8+i];
         if(s.isNil()){
@@ -138,20 +145,32 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
         /* __threadfence();                                         */
         if (closed_list[s.hash()] == myid){
             Rand(random);
-            int result = random[num]%N;
+
+            //XXX
+            /* int result = random[num]%N; */
+            /* int result = j%N; */
+            int result = (num + 1)%N;
+            j++;
+
+
             stateWithF froms(&table[myid]);
             stateWithF tmp[M];
             for(int i=0;i<M;i++){
                 tmp[i] = array[i+M*result];
             }
             BinaryHeap pq = BinaryHeap(tmp, lengths[result]);
+
+            // These methods may include some bugs
+            //XXX
             pq.add(froms);
             lengths[result] = pq.n;
+
             for(int i=0;i<M;i++){
                 array[i+M*result] = pq.a[i];
             }
-            printf("add (%d,%d) to pq %d when f-value is %d\n", table[myid].node.x, table[myid].node.y, result, froms.fWhenInserted);
+            /* printf("add (%d,%d) to pq %d from pq %d when f-value is %f\n", table[myid].node.x, table[myid].node.y, result, num, froms.fWhenInserted); */
         }
+        __threadfence();
 
 
 
@@ -216,6 +235,7 @@ __global__ void init(state* table, int* lengths, stateWithF* array) {
 }
 
 __global__ void path_create(xyLoc* d_path, xyLoc s){
+    /* printf("Start to create path!\n"); */
     for(int i=0;i<1000;i++){
         d_path[i] = xyLoc(-1,-1);
     }
@@ -229,6 +249,7 @@ __global__ void path_create(xyLoc* d_path, xyLoc s){
         i++;
         last = *last.parent;
     }
+    /* printf("Finish creating path!\n"); */
 }
 
 
@@ -325,6 +346,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         return true;
     }
     CHECK(cudaDeviceSynchronize());
+    bool pathFound;
     while(!isAllQueueEmpty(h_lengths)) {
         state*  S= (state*)malloc(sizeof(state)*N*8);
         for(int i=0;i<8*N;i++){
@@ -354,7 +376,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
 
 
 
-        cout << "start removing\n" << endl;
+        /* cout << "start removing\n" << endl; */
         remove<<<1,N>>>(d_table, d_lengths, d_array, d_S, g, d_neighbors, d_map, d_kouho, d_closed_list);
         CHECK(cudaDeviceSynchronize());
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
@@ -362,26 +384,26 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         CHECK(cudaMemcpy(h_kouho, d_kouho, N*sizeof(state), cudaMemcpyDeviceToHost));
         for(int i=0;i<N;i++){
             if(h_kouho[i].isNil()){
-                cout << "kouho is nil" << endl;
+                /* cout << "kouho is nil" << endl; */
             } else{
                 if(m.isNil() || m.f_value > h_kouho[i].f_value)
                     m = h_kouho[i];
             }
         }
-        cout << "For end" << endl;
+        /* cout << "For end" << endl; */
 
 
         /* CHECK(cudaMemcpyFromSymbol(&m, d_m, sizeof(state))); */
 
-        bool pathFound = false;
+        pathFound = false;
         if (!m.isNil()) {
-            cout <<"これでいいかチェックします！" << endl;
+            /* cout <<"これでいいかチェックします！" << endl; */
             pathFound = true;
             for(int i=0; i< N; i++) {
                 if (h_lengths[i] == 0){
                     continue;
                 } else {
-                    cout << m.f_value << " " << h_array[M*i].fWhenInserted << endl;
+                    /* cout << m.f_value << " " << h_array[M*i].fWhenInserted << endl; */
                     if(m.f_value > h_array[M*i].fWhenInserted){
                         pathFound = false;
                         break;
@@ -395,7 +417,7 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             free(neighbors);
             break;
         }
-        cout << "start duplicate detection\n" << endl;
+        /* cout << "start duplicate detection\n" << endl; */
         duplicate_detection<<<1,N>>>(d_table, d_lengths, d_array, d_S, d_random, d_closed_list);
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaDeviceSynchronize());
@@ -406,29 +428,31 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         cudaFree(d_neighbors);
         cudaFree(d_kouho);
     }
-    cout << "HERE?" << endl;
+    /* cout << "HERE?" << endl; */
     free(h_array);
     for(int i=0;i<N;i++){
         free(pqs[i].a);
     }
 
-    //XXX
-    xyLoc h_path[1000];
-    for(int i=0;i<1000;i++){
-        h_path[i] = xyLoc(-1,-1);
+    if (pathFound){
+        //XXX
+        xyLoc h_path[1000];
+        for(int i=0;i<1000;i++){
+            h_path[i] = xyLoc(-1,-1);
+        }
+        xyLoc* d_path;
+        CHECK(cudaMalloc((xyLoc**)&d_path, 1000*sizeof(xyLoc)));
+        path_create<<<1,1>>>(d_path, s);
+        CHECK(cudaDeviceSynchronize());
+        CHECK(cudaMemcpy(h_path, d_path, 1000*sizeof(xyLoc), cudaMemcpyDeviceToHost));
+        for(int i=0;h_path[i].x != -1; i++){
+            path.push_back(h_path[i]);
+        }
+        path.push_back(s);
+        reverse(path.begin(), path.end());
+        CHECK(cudaFree(d_path));
     }
-    xyLoc* d_path;
-    CHECK(cudaMalloc((xyLoc**)&d_path, 1000*sizeof(xyLoc)));
-    path_create<<<1,1>>>(d_path, s);
-    CHECK(cudaDeviceSynchronize());
-    CHECK(cudaMemcpy(h_path, d_path, 1000*sizeof(xyLoc), cudaMemcpyDeviceToHost));
-    for(int i=0;h_path[i].x != -1; i++){
-        path.push_back(h_path[i]);
-    }
-    path.push_back(s);
-    reverse(path.begin(), path.end());
 
-    CHECK(cudaFree(d_path));
     CHECK(cudaFree(d_table));
     free(h_table);
 
