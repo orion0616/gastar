@@ -97,7 +97,6 @@ __global__ void remove(state* table, int* lengths, stateWithF* array, state* S, 
 
     int numOfNeighbors = GetSuccessors_for_gastar(&table[closed_list[min.ptr->hash()]], neighbors, num, goal, d_map);
     /* printf("created neighbors\n"); */
-    /* int numOfNeighbors = GetSuccessors_for_gastar(&table[min.ptr->hash()], neighbors, num, goal, d_map); */
     for(int i= 0;i<numOfNeighbors; i++) {
         S[num*8+i]= neighbors[num*8+i];
         /* printf("%d %d\n", S[num*8+i].node.x, S[num*8+i].node.y); */
@@ -139,10 +138,6 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
             __threadfence();
         }
         __threadfence();
-        /* while(table[closed_list[s.hash()]].g_value > s.g_value){ */
-        /*     closed_list[s.hash()] = myid;                        */
-        /* }                                                        */
-        /* __threadfence();                                         */
         if (closed_list[s.hash()] == myid){
             Rand(random);
 
@@ -172,49 +167,6 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
         }
         __threadfence();
 
-
-
-        /* while(table[s.hash()].isNil() || table[s.hash()].g_value > s.g_value){ */
-        /*     // this must be atomic                                             */
-        /*     //XXX                                                              */
-        /*     table[s.hash()] = s;                                               */
-
-        /*     if (s.g_value != table[s.hash()].g_value)                          */
-        /*         continue;                                                      */
-        /*     Rand(random);                                                      */
-        /*     int result = random[num]%N;                                        */
-        /*     stateWithF froms(&table[s.hash()]);                                */
-        /*     stateWithF tmp[M];                                                 */
-        /*     for(int i=0;i<M;i++){                                              */
-        /*         tmp[i] = array[i+M*result];                                    */
-        /*     }                                                                  */
-        /*     BinaryHeap pq = BinaryHeap(tmp, lengths[result]);                  */
-        /*     pq.add(froms);                                                     */
-        /*     lengths[result] = pq.n;                                            */
-        /*     for(int i=0;i<M;i++){                                              */
-        /*         array[i+M*result] = pq.a[i];                                   */
-        /*     }                                                                  */
-
-        /* }                                                                      */
-        /* if (old.isNil() || old.g_value > s.g_value) {         */
-        /*     table[s.hash()] = s;                              */
-        /*     if(s != table[s.hash()])                          */
-
-
-        /*     Rand(random);                                     */
-        /*     int result = random[num]%N;                       */
-        /*     stateWithF froms(&table[s.hash()]);               */
-        /*     stateWithF tmp[M];                                */
-        /*     for(int i=0;i<M;i++){                             */
-        /*         tmp[i] = array[i+M*result];                   */
-        /*     }                                                 */
-        /*     BinaryHeap pq = BinaryHeap(tmp, lengths[result]); */
-        /*     pq.add(froms);                                    */
-        /*     lengths[result] = pq.n;                           */
-        /*     for(int i=0;i<M;i++){                             */
-        /*         array[i+M*result] = pq.a[i];                  */
-        /*     }                                                 */
-        /* }                                                     */
     }
     return;
 }
@@ -250,6 +202,13 @@ __global__ void path_create(xyLoc* d_path, xyLoc s){
         last = *last.parent;
     }
     /* printf("Finish creating path!\n"); */
+}
+
+__global__ void tmp_memory_reset(state *s, state *neighbors) {
+    int num = threadIdx.x;
+    s[num] = d_nil;
+    neighbors[num] = d_nil;
+    return;
 }
 
 
@@ -347,24 +306,16 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     }
     CHECK(cudaDeviceSynchronize());
     bool pathFound;
+
+    state* d_S;
+    CHECK(cudaMalloc((state**)&d_S, N*8*sizeof(state)));
+    state* d_neighbors;
+    CHECK(cudaMalloc((state**)&d_neighbors, 8*N*sizeof(state)));
+
     while(!isAllQueueEmpty(h_lengths)) {
-        state*  S= (state*)malloc(sizeof(state)*N*8);
-        for(int i=0;i<8*N;i++){
-            S[i] = nil;
-        }
-        state* d_S;
-        CHECK(cudaMalloc((state**)&d_S, N*8*sizeof(state)));
-        CHECK(cudaMemcpy(d_S, S, 8*N*sizeof(state), cudaMemcpyHostToDevice));
+        tmp_memory_reset<<<1, N*8>>>(d_S, d_neighbors);
 
-        state* neighbors = (state*)malloc(sizeof(state)*N*8);
-        for(int i=0;i<8*N;i++){
-            neighbors[i] = nil;
-        }
-        state* d_neighbors;
-        CHECK(cudaMalloc((state**)&d_neighbors, 8*N*sizeof(state)));
-        CHECK(cudaMemcpy(d_neighbors, neighbors, 8*N*sizeof(state), cudaMemcpyHostToDevice));
-
-        CHECK(cudaMemcpy(d_lengths, h_lengths, N*sizeof(int), cudaMemcpyHostToDevice));
+        /* CHECK(cudaMemcpy(d_lengths, h_lengths, N*sizeof(int), cudaMemcpyHostToDevice)); */
 
         state* d_kouho;
         state h_kouho[N];
@@ -413,8 +364,9 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
         }
         if(pathFound){
-            free(S);
-            free(neighbors);
+            cudaFree(d_S);
+            cudaFree(d_neighbors);
+            cudaFree(d_kouho);
             break;
         }
         /* cout << "start duplicate detection\n" << endl; */
@@ -422,12 +374,10 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         CHECK(cudaDeviceSynchronize());
 
-        free(S);
-        free(neighbors);
-        cudaFree(d_S);
-        cudaFree(d_neighbors);
         cudaFree(d_kouho);
     }
+    cudaFree(d_S);
+    cudaFree(d_neighbors);
     /* cout << "HERE?" << endl; */
     free(h_array);
     for(int i=0;i<N;i++){
@@ -460,8 +410,12 @@ bool GetPath_GASTAR(void *data, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
 
     CHECK(cudaFree(d_random));
 
-    CHECK(cudaDeviceReset());
+    /* CHECK(cudaDeviceReset()); */
     return true;
+}
+
+void device_reset(){
+    CHECK(cudaDeviceReset());
 }
 
 __device__ int GetIndex(xyLoc s)
