@@ -148,9 +148,8 @@ int main(int argc, char **argv)
 
     Timer t;
     std::vector<stats> experimentStats;
-    //XXX
-    // for (int x = 0; x <300;x++)
     for (int x = 0; x < scen.GetNumExperiments(); x++)
+    // for (int x = 0; x <200; x++)
     {
         //printf("%d of %d\n", x+1, scen.GetNumExperiments());
         thePath.resize(0);
@@ -192,7 +191,9 @@ int main(int argc, char **argv)
         } while (done == false);
 
     }
+    device_reset();
 
+    // for (unsigned int x = 336; x < experimentStats.size(); x++)
     for (unsigned int x = 0; x < experimentStats.size(); x++)
     {
         printf("%s\ttotal-time\t%f\tmax-time-step\t%f\ttime-20-moves\t%f\ttotal-len\t%f\tsubopt\t%f\t", argv[3],

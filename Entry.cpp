@@ -14,7 +14,7 @@
 std::vector<bool> map;
 std::vector<int> visited;
 std::vector<xyLoc> succ;
-int width, height;
+__host__ __device__ int width, height;
 
 using namespace std;
 

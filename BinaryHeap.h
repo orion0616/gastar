@@ -9,9 +9,9 @@ using namespace std;
 class BinaryHeap {
 public:
     int n;
-    stateWithF a[1000];
+    stateWithF* a;
 
-    void bubbleUp(int i){
+    __host__ __device__ void bubbleUp(int i){
         int p = parent(i);
         while (i > 0 && (a[i] < a[p])) {
             stateWithF tmp = a[i];
@@ -21,7 +21,7 @@ public:
             p = parent(i);
         }
     }
-    void trickleDown(int i){
+    __host__ __device__ void trickleDown(int i){
         do {
             int j = -1;
             int r = right(i);
@@ -46,27 +46,31 @@ public:
             i = j;
         } while (i >= 0);
     }
-    bool empty() {
+    __host__ __device__ bool empty() {
         return n==0;
     }
-    static int left(int i) {
+    __host__ __device__ static int left(int i) {
         return 2*i + 1;
     }
-    static int right(int i) {
+    __host__ __device__ static int right(int i) {
         return 2*i + 2;
     }
-    static int parent(int i) {
+    __host__ __device__ static int parent(int i) {
         return (i-1)/2;
     }
     BinaryHeap(){};
-    ~BinaryHeap(){};
-    bool add(stateWithF x){
+    __host__ __device__ BinaryHeap(stateWithF* array, int n){
+        this->a = array;
+        this->n = n;
+    };
+    __host__ __device__ ~BinaryHeap(){};
+    __host__ __device__ bool add(stateWithF x){
         a[n] = x;
         n++;
         bubbleUp(n-1);
         return true;
     };
-    stateWithF remove(){
+    __host__ __device__ stateWithF remove(){
         stateWithF x = a[0];
         a[0] = a[--n];
         // a.pop_back();
@@ -76,7 +80,7 @@ public:
     stateWithF top() {
         return a[0];
     }
-    int size() {
+    __host__ __device__ int size() {
         return n;
     }
 };
