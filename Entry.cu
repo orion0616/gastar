@@ -308,12 +308,18 @@ bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
         if(pathFound){
             break;
         }
-
     }
+    CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
+    pathFound = true;
+
     cudaFree(d_S);
     cudaFree(d_neighbors);
     cudaFree(d_kouho);
+    cudaFree(d_closed_list);
+    cudaFree(d_array);
+    cudaFree(d_lengths);
     free(h_array);
+    free(h_closed_list);
     for(int i=0;i<N;i++){
         free(pqs[i].a);
     }
@@ -339,7 +345,8 @@ bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     return true;
 }
 
-void device_reset(){
+void device_reset(void *data){
+    cudaFree(data);
     CHECK(cudaDeviceReset());
 }
 
