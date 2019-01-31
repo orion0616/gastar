@@ -11,8 +11,8 @@
 #include "Entry.h"
 
 #define N 64
-#define M 400
-#define MAX 1000000
+#define M 500
+#define MAX 2000000
 
 #define CHECK(call)                                                          \
 {                                                                            \
@@ -28,10 +28,11 @@ std::vector<bool> map;
 std::vector<int> visited;
 std::vector<xyLoc> succ;
 int h_width, h_height;
-__device__ state d_initial;
-__device__ state d_nil;
-__device__ state d_m;
+__constant__ state d_initial;
+__constant__ state d_nil;
+__constant__ state d_m;
 __device__ int id;
+__device__ bool d_pathFound;
 
 using namespace std;
 
@@ -126,7 +127,6 @@ __global__ void duplicate_detection(state* table, int *lengths, stateWithF* arra
         table[myid] = s;
 
         int old = closed_list[s.hash()];
-        __threadfence();
 
         while(old == -1 || table[old].f_value > s.f_value){
             atomicCAS(&closed_list[s.hash()], old, myid);
@@ -208,6 +208,14 @@ __global__ void init_dtable(state * d_table){
     }
 }
 
+__global__ void checkIfPathIsFound(stateWithF* d_array){
+    int num = threadIdx.x;
+    d_pathFound = true;
+    if(d_m.f_value >= d_array[M*num].fWhenInserted){
+        d_pathFound = false;
+    }
+}
+
 
 bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     int h_id = 1;
@@ -256,7 +264,6 @@ bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     CHECK(cudaMalloc((int**)&d_lengths, N*sizeof(int)));
     CHECK(cudaMemcpy(d_lengths, h_lengths, N*sizeof(int), cudaMemcpyHostToDevice));
 
-    stateWithF* h_array = (stateWithF*)malloc(sizeof(stateWithF)*N*M);
     stateWithF* d_array;
     CHECK(cudaMalloc((stateWithF**)&d_array, M*N*sizeof(stateWithF)));
     init<<<1,1>>>((state *)d_table, d_lengths, d_array);
@@ -287,23 +294,18 @@ bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
             if(h_kouho[i].isNil()){
                 /* cout << "kouho is nil" << endl; */
             } else{
-                if(m.isNil() || m.f_value > h_kouho[i].f_value)
+                if(m.isNil() || m.f_value > h_kouho[i].f_value){
                     m = h_kouho[i];
+                    CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
+                }
             }
         }
         duplicate_detection<<<1,N>>>((state*)d_table, d_lengths, d_array, d_S, d_closed_list);
         pathFound = false;
         CHECK(cudaMemcpy(h_lengths, d_lengths, N*sizeof(int), cudaMemcpyDeviceToHost));
         if (!m.isNil()) {
-            CHECK(cudaMemcpy(h_array, d_array, M*N*sizeof(stateWithF), cudaMemcpyDeviceToHost));
-            pathFound = true;
-            for(int i=0; i< N; i++) {
-                if(m.f_value >= h_array[M*i].fWhenInserted){
-                    pathFound = false;
-                    break;
-                }
-            }
-            CHECK(cudaMemcpyToSymbol(d_m, &m, sizeof(state)));
+            checkIfPathIsFound<<<1,N>>>(d_array);
+            CHECK(cudaMemcpyFromSymbol(&pathFound, d_pathFound, sizeof(bool)));
         }
         if(pathFound){
             break;
@@ -318,7 +320,6 @@ bool GetPath_GASTAR(void *d_table, xyLoc s, xyLoc g, std::vector<xyLoc> &path) {
     cudaFree(d_closed_list);
     cudaFree(d_array);
     cudaFree(d_lengths);
-    free(h_array);
     free(h_closed_list);
     for(int i=0;i<N;i++){
         free(pqs[i].a);
